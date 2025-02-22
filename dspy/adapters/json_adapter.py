@@ -1,21 +1,20 @@
-import ast
 import enum
 import inspect
 import json
 import logging
 import textwrap
 from copy import deepcopy
-from typing import Any, Dict, KeysView, Literal, NamedTuple, get_args, get_origin
+from typing import Any, Dict, KeysView, Literal, NamedTuple
 
 import json_repair
 import litellm
 import pydantic
-from pydantic import TypeAdapter, create_model
+from pydantic import create_model
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.image_utils import Image
-from dspy.adapters.utils import find_enum_member, format_field_value, serialize_for_json
+from dspy.adapters.utils import parse_value, format_field_value, get_annotation_name, serialize_for_json
 from dspy.signatures.signature import SignatureMeta
 from dspy.signatures.utils import get_dspy_field_type
 
@@ -37,7 +36,8 @@ class JSONAdapter(Adapter):
 
         try:
             provider = lm.model.split("/", 1)[0] or "openai"
-            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
+            params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
+            if params and "response_format" in params:
                 try:
                     response_format = _get_structured_outputs_response_format(signature)
                     outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
@@ -118,26 +118,6 @@ class JSONAdapter(Adapter):
         return format_fields(role=role, fields_with_values=fields_with_values)
 
 
-def parse_value(value, annotation):
-    if annotation is str:
-        return str(value)
-
-    parsed_value = value
-
-    if isinstance(annotation, enum.EnumMeta):
-        parsed_value = find_enum_member(annotation, value)
-    elif isinstance(value, str):
-        try:
-            parsed_value = json.loads(value)
-        except json.JSONDecodeError:
-            try:
-                parsed_value = ast.literal_eval(value)
-            except (ValueError, SyntaxError):
-                parsed_value = value
-
-    return TypeAdapter(annotation).validate_python(parsed_value)
-
-
 def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     """
     Formats the value of the specified field according to the field's DSPy type (input or output),
@@ -150,10 +130,11 @@ def _format_field_value(field_info: FieldInfo, value: Any) -> str:
     Returns:
       The formatted value of the field, represented as a string.
     """
+    # TODO: Wasnt this easy to fix?
     if field_info.annotation is Image:
         raise NotImplementedError("Images are not yet supported in JSON mode.")
 
-    return format_field_value(field_info=field_info, value=value, assume_text=True)
+    return format_field_value(field_info=field_info, value=value)
 
 
 def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
@@ -242,19 +223,6 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
     return {"role": role, "content": "\n\n".join(content).strip()}
 
 
-def get_annotation_name(annotation):
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin is None:
-        if hasattr(annotation, "__name__"):
-            return annotation.__name__
-        else:
-            return str(annotation)
-    else:
-        args_str = ", ".join(get_annotation_name(arg) for arg in args)
-        return f"{get_annotation_name(origin)}[{args_str}]"
-
-
 def enumerate_fields(fields):
     parts = []
     for idx, (k, v) in enumerate(fields.items()):
@@ -285,7 +253,7 @@ def prepare_instructions(signature: SignatureMeta):
         elif hasattr(type_, "__origin__") and type_.__origin__ is Literal:
             desc = f"must be one of: {'; '.join([str(x) for x in type_.__args__])}"
         else:
-            desc = "must be pareseable according to the following JSON schema: "
+            desc = "must adhere to the JSON schema: "
             desc += json.dumps(pydantic.TypeAdapter(type_).json_schema())
 
         desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""

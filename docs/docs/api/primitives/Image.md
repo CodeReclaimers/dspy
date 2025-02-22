@@ -11,6 +11,7 @@
             - model_dump
             - model_dump_json
             - model_post_init
+            - serialize_model
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
