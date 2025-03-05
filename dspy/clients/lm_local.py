@@ -12,6 +12,10 @@ from datasets import Dataset
 from typing import Any, Dict, List, Optional
 from dspy.clients.provider import TrainingJob, Provider
 from dspy.clients.utils_finetune import TrainDataFormat, save_data
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from dspy.clients.lm import LM
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,7 @@ class LocalProvider(Provider):
     @staticmethod
     def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         try:
-            import sglang
+            import sglang # noqa: F401
         except ImportError:
             raise ImportError(
                 "For local model launching, please install sglang by running "
@@ -118,7 +122,7 @@ class LocalProvider(Provider):
 
 
     @staticmethod
-    def kill(lm: 'LM', launch_kwargs: Optional[Dict[str, Any]] = None):
+    def kill(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         from sglang.utils import terminate_process
         if not hasattr(lm, "process"):
             logger.info("No running server to kill.")
@@ -227,7 +231,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
 
     hf_dataset = Dataset.from_list(train_data)
     def tokenize_function(example):
-        return encode_sft_example(example, tokenizer, max_seq_length)
+        return encode_sft_example(example, tokenizer, train_kwargs["max_seq_length"])
     tokenized_dataset = hf_dataset.map(tokenize_function, batched=False)
     tokenized_dataset.set_format(type="torch")
     tokenized_dataset = tokenized_dataset.filter(lambda example: (example["labels"] != -100).any())

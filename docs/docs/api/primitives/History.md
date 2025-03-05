@@ -1,20 +1,8 @@
-# dspy.Prediction
+# dspy.History
 
-::: dspy.Prediction
+::: dspy.History
     handler: python
     options:
-        members:
-            - copy
-            - from_completions
-            - get
-            - inputs
-            - items
-            - keys
-            - labels
-            - toDict
-            - values
-            - with_inputs
-            - without
         show_source: true
         show_undocumented_members: true
         show_root_heading: true
